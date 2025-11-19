@@ -1,0 +1,77 @@
+#!/bin/sh
+
+[ -z "$PG_DATABASE"  ] && PG_DATABASE="opennms"
+[ -z "$PG_USER"      ] && PG_USER="postgres"
+[ -z "$PG_HOST"      ] && PG_HOST="localhost"
+[ -z "$PG_PORT"      ] && PG_PORT="5432"
+[ -z "$PG_PSQL"      ] && PG_PSQL="@PSQL_BINDIR@/psql"
+[ -z "$PG_PLUGINDIR" ] && PG_PLUGINDIR="@PG_PLUGINDIR@"
+
+do_error() {
+	echo "Cannot install iplike: $@"
+	exit 1
+}
+
+do_help() {
+	cat <<END
+usage: $0 [-h] [-d database] [-u pg_user] [-x pg_host] [-p pg_port] [-s sudo_user]
+
+	-h   this help
+	-c   the PostgreSQL \`psql\` command to run (default: "$PG_PSQL")
+	-d   the PostgreSQL database to insert the function into (default: "$PG_DATABASE")
+	-l   the PostgreSQL plugin library directory (default: "$PG_PLUGINDIR")
+	-u   the PostgreSQL user to log in as (default: "$PG_USER")
+	-x   the PostgreSQL server name to connect to (default: "$PG_HOST")
+	-p   the PostgreSQL server port to connect to (default: "$PG_PORT")
+	-s   the user to sudo to before running psql (default: "$SUDO_USER")
+
+END
+
+	exit 0
+}
+
+
+while getopts hc:d:l:u:x:p:s: ARG; do
+	case "$ARG" in
+		h) do_help ;;
+		c) PG_PSQL="$OPTARG" ;;
+		d) PG_DATABASE="$OPTARG" ;;
+		l) PG_PLUGINDIR="$OPTARG" ;;
+		u) PG_USER="$OPTARG" ;;
+		x) PG_HOST="$OPTARG" ;;
+		p) PG_PORT="$OPTARG" ;;
+		s) SUDO_USER="$OPTARG" ;;
+	esac
+done
+
+if [ ! -r "$PG_PLUGINDIR/iplike.la" ]; then
+	do_error "unable to locate iplike.la"
+fi
+
+. "$PG_PLUGINDIR/iplike.la"
+
+if [ ! -f "$PG_PLUGINDIR/$dlname" ]; then
+	do_error "$PG_PLUGINDIR/$dlname does not exist"
+fi
+
+if [ ! -x "$PG_PSQL" ]; then
+	do_error "'$PG_PSQL' is not a working psql binary"
+fi
+
+PG_COMMAND="$PG_COMMAND $PG_PSQL"
+[ -n "$PG_USER"   ] && PG_COMMAND="$PG_COMMAND -U $PG_USER"
+[ -n "$PG_HOST"   ] && PG_COMMAND="$PG_COMMAND -h $PG_HOST"
+[ -n "$PG_PORT"   ] && PG_COMMAND="$PG_COMMAND -p $PG_PORT"
+PG_COMMAND="$PG_COMMAND $PG_DATABASE"
+
+CREATE="CREATE OR REPLACE FUNCTION iplike(i_ipaddress text,i_rule text) RETURNS bool AS '$PG_PLUGINDIR/$dlname' LANGUAGE 'c' RETURNS NULL ON NULL INPUT;"
+
+if [ -n "$SUDO_USER" ]; then
+	if [ -x /usr/bin/sudo ]; then
+		echo "$CREATE" | sudo -u $SUDO_USER $PG_COMMAND
+	else
+		echo "$CREATE" | su $SUDO_USER -c "$PG_COMMAND"
+	fi
+else
+	echo "$CREATE" | $PG_COMMAND
+fi

@@ -1,0 +1,80 @@
+#!/usr/bin/make -f
+POSTGRESQL_VERSION=@POSTGRESQL_VERSION@
+PG_TYPE_VERSION=@PG_TYPE_VERSION@
+#export DH_VERBOSE=1
+
+
+# Set up some useful variables
+IPLIKE_VERSION=@IPLIKE_VERSION@
+DEB_TAR_SRCDIR := iplike-$(IPLIKE_VERSION)
+PGLIBDIR=@PG_LIBDIR@
+PG_PLUGINDIR=@PG_PLUGINDIR@
+
+#include /usr/share/cdbs/1/rules/tarball.mk
+include /usr/share/cdbs/1/rules/simple-patchsys.mk
+include /usr/share/cdbs/1/class/autotools.mk
+include /usr/share/cdbs/1/rules/debhelper.mk
+
+PATH := /usr/lib/postgresql/$(POSTGRESQL_VERSION)/bin:$(PATH)
+
+CFLAGS = -Wall -g
+
+ifneq (,$(findstring noopt,$(DEB_BUILD_OPTIONS)))
+	CFLAGS += -O0
+else
+	CFLAGS += -O2
+endif
+
+configure:
+	dh_testdir
+	# This handles building directly from the git repo
+	if [ ! -e ./configure ]; then autoreconf -fvi; fi
+	dh_auto_configure
+
+build: configure
+	dh_auto_build
+	dh_auto_test
+
+# Build architecture-independent files here.
+binary-indep: install
+# We have nothing to do by default.
+
+# Build architecture-dependent files here.
+binary-arch: build install debian/postinst debian/prerm
+	dh_testdir
+	dh_testroot
+	dh_installchangelogs 
+	dh_installdocs
+	dh_installexamples
+#	dh_install
+#	dh_installmenu
+#	dh_installdebconf	
+#	dh_installlogrotate
+#	dh_installemacsen
+#	dh_installpam
+#	dh_installmime
+#	dh_python
+#	dh_installinit
+#	dh_installcron
+#	dh_installinfo
+	# Lintian overrides
+	mv $(CURDIR)/debian/iplike-pgsql$(PG_TYPE_VERSION)/usr/sbin/install_iplike.sh $(CURDIR)/debian/iplike-pgsql$(PG_TYPE_VERSION)/usr/sbin/install_iplike-$(PG_TYPE_VERSION).sh
+	mkdir -p -m 755 $(CURDIR)/debian/iplike-pgsql$(PG_TYPE_VERSION)/usr/share/lintian/overrides
+	install -m 644 $(CURDIR)/debian/overrides \
+		$(CURDIR)/debian/iplike-pgsql$(PG_TYPE_VERSION)/usr/share/lintian/overrides/libiplike-pgsql$(PG_TYPE_VERSION)
+	find debian ! -type d | sort -u
+	dh_installman
+	dh_link
+	dh_strip
+	dh_compress
+	dh_fixperms
+#	dh_perl
+#	dh_makeshlibs
+	dh_installdeb
+	dh_shlibdeps
+	dh_gencontrol
+	dh_md5sums
+	dh_builddeb
+
+binary: binary-indep binary-arch
+.PHONY: binary-indep binary-arch binary install
